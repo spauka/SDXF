@@ -1,5 +1,3 @@
-#(c)www.stani.be                      
-
 __version__ = """v1.1.2 (07/06/12)"""
 __author__ = "www.stani.be"
 __license__ = "GPL"
@@ -22,8 +20,6 @@ import copy
 _HEADER_POINTS = ['insbase', 'extmin', 'extmax']
 
 #---helper functions
-
-
 def _point(x, index=0):
     """Convert tuple to a dxf point"""
     return '\n'.join(['%s\n%s' % ((i + 1) * 10 + index, x[i])
@@ -35,21 +31,19 @@ def _points(p):
     return [_point(p[i], i) for i in range(len(p))]
 
 #---base classes
-
-
-class _Call:
+class _Call(object):
     """Makes a callable class."""
     def copy(self):
         """Returns a copy."""
         return copy.deepcopy(self)
-    
+
     def __call__(self, **attrs):
         """Returns a copy with modified attributes."""
         copied = self.copy()
         for attr in attrs:
             setattr(copied, attr, attrs[attr])
         return copied
-    
+
 
 class _Entity(_Call):
     """Base class for _common group codes for entities."""
@@ -65,7 +59,7 @@ class _Entity(_Call):
         self.lineWeight = lineWeight
         self.thickness = thickness
         self.parent = parent
-        
+
     def _common(self):
         """Return common group codes as a string."""
         parent = self.parent if self.parent else self
@@ -83,16 +77,16 @@ class _Entity(_Call):
         if parent.thickness is not None:
             result += '\n39\n%s' % parent.thickness
         return result
-    
 
-class _Entities:
+
+class _Entities(object):
     """Base class to deal with composed objects."""
     def __dxf__(self):
         return []
-        
+
     def __str__(self):
         return '\n'.join([str(x) for x in self.__dxf__()])
-        
+
 
 class _Collection(_Call):
     """Base class to expose entities methods to main object."""
@@ -163,6 +157,39 @@ ALIGNED, MIDDLE, FIT = 3, 4, 5  # if vertical alignment = 0
 BASELINE, BOTTOM, MIDDLE, TOP = 0, 1, 2, 3
 
 ####3) Classes
+# Helper Classes
+class Coord(object):
+    __slots__ = ('_coord', '_len')
+    """Represents a 3D coordinate"""
+    def __init__(self, coord=(0, 0, 0)):
+        # Extend 2D tuples to 3D and reject otherwise
+        if len(coord) == 2:
+            self._len = 2
+            self._coord = (coord[0], coord[1], 0)
+        elif len(coord) == 3:
+            self._len = 3
+            self._coord = coord
+        else:
+            raise ValueError("Coordinates must be in 2D or 3D")
+
+        # Ensure that the tuple is in numerical form
+        print self._coord
+        self._coord = tuple(map(float, self._coord))
+
+    @property
+    def coord(self):
+        return self._coord
+
+    def __repr__(self):
+        return "%s(%r)" % (self.__class__.__name__, self._coord)
+
+    def __len__(self):
+        return self._len
+    def __getitem__(self, key):
+        return self._coord[key]
+    def __iter__(self):
+        return iter(self._coord)
+
 #---entitities
 
 
@@ -172,7 +199,7 @@ class Arc(_Entity):
                  startAngle=0.0, endAngle=90, **common):
         """Angles in degrees."""
         _Entity.__init__(self, **common)
-        self.center = center
+        self.center = Coord(center)
         self.radius = radius
         self.startAngle = startAngle
         self.endAngle = endAngle
@@ -187,7 +214,7 @@ class Circle(_Entity):
     """Circle"""
     def __init__(self, center=(0, 0, 0), radius=1, **common):
         _Entity.__init__(self, **common)
-        self.center = center
+        self.center = Coord(center)
         self.radius = radius
 
     def __str__(self):
@@ -199,7 +226,7 @@ class Face(_Entity):
     """3dface"""
     def __init__(self, points, **common):
         _Entity.__init__(self, **common)
-        self.points = points
+        self.points = [Coord(point) for point in points]
 
     def __str__(self):
         return '\n'.join(['0\n3DFACE', self._common()] +
@@ -214,7 +241,7 @@ class Insert(_Entity):
                  rotation=None, **common):
         _Entity.__init__(self, **common)
         self.name = name
-        self.point = point
+        self.point = Coord(point)
         self.xscale = xscale
         self.yscale = yscale
         self.zscale = zscale
@@ -223,7 +250,7 @@ class Insert(_Entity):
         self.rows = rows
         self.rowspacing = rowspacing
         self.rotation = rotation
-        
+
     def __str__(self):
         result = '0\nINSERT\n2\n%s\n%s\n%s' % (self.name, self._common(),
                 _point(self.point))
@@ -244,13 +271,13 @@ class Insert(_Entity):
         if self.rowspacing is not None:
             result += '\n45\n%s' % self.rowspacing
         return result
-        
+
 
 class Line(_Entity):
     """Line"""
     def __init__(self, points, **common):
         _Entity.__init__(self, **common)
-        self.points = points
+        self.points = [Coord(point) for point in points]
 
     def __str__(self):
         return '\n'.join(['0\nLINE', self._common()] + _points(self.points))
@@ -262,7 +289,7 @@ class LwPolyLine(_Entity):
 
     def __init__(self, points, flag=0, width=None, **common):
         _Entity.__init__(self, **common)
-        self.points = points
+        self.points = [Coord(point) for point in points]
         self.flag = flag
         self.width = width
 
@@ -279,7 +306,7 @@ class LwPolyLine(_Entity):
 class PolyLine(_Entity):
     def __init__(self, points, flag=0, width=None, **common):
         _Entity.__init__(self, **common)
-        self.points = points
+        self.points = [Coord(point) for point in points]
         self.flag = flag
         self.width = width
 
@@ -300,7 +327,10 @@ class Point(_Entity):
     """Colored solid fill."""
     def __init__(self, points=None, **common):
         _Entity.__init__(self, **common)
-        self.points = points
+        if points:
+            self.points = [Coord(point) for point in points]
+        else:
+            self.points = None
 
     def __str__(self):
         result = '0\nPOINT\n%s' % (self._common())
@@ -312,7 +342,10 @@ class Solid(_Entity):
     """Colored solid fill."""
     def __init__(self, points=None, **common):
         _Entity.__init__(self, **common)
-        self.points = points
+        if points:
+            self.points = [Coord(point) for point in points]
+        else:
+            self.points = None
 
     def __str__(self):
         return '\n'.join(['0\nSOLID', self._common()] + 
@@ -327,7 +360,7 @@ class Text(_Entity):
             **common):
         _Entity.__init__(self, **common)
         self.text = text
-        self.point = point
+        self.point = Coord(point)
         self.alignment = alignment
         self.flag = flag
         self.height = height
@@ -399,10 +432,10 @@ class Mtext(Text):
                 else:
                     y += 1
         return result[1:]
-        
+
 ##class _Mtext(_Entity):
 ##    """Mtext not functioning for minimal dxf."""
-##    def __init__(self,text='',point=(0,0,0),attachment=1,
+##    def __init__(self,text='',point=(0),attachment=1,
 ##                 charWidth=None,charHeight=1,direction=1,height=100,rotation=0,
 ##                 spacingStyle=None,spacingFactor=None,style=None,width=100,
 ##                 xdirection=None,**common):
@@ -438,26 +471,29 @@ class Mtext(Text):
 ##        if self.spacingStyle:result+='\n73\n%s'%self.spacingStyle
 ##        if self.spacingFactor:result+='\n44\n%s'%self.spacingFactor
 ##        return result
-    
+
 #---tables
 
 
 class Block(_Collection):
     """Use list methods to add entities, eg append."""
-    def __init__(self, name, layer='0', flag=0, base=(0, 0, 0), entities=[]):
-        self.entities = copy.copy(entities)
+    def __init__(self, name, layer='0', flag=0, base=(0, 0, 0), entities=None):
+        if entities:
+            self.entities = copy.copy(entities)
+        else:
+            self.entities = []
         _Collection.__init__(self, entities)
         self.layer = layer
         self.name = name
         self.flag = 0
-        self.base = base
+        self.base = Coord(base)
 
     def __str__(self):
         e = '\n'.join([str(x)for x in self.entities])
         return '0\nBLOCK\n8\n%s\n2\n%s\n70\n%s\n%s\n3\n%s\n%s\n0\nENDBLK' % (
                 self.layer, self.name.upper(), self.flag, _point(self.base),
                 self.name.upper(), e)
-            
+
 
 class Layer(_Call):
     """Layer"""
@@ -472,15 +508,18 @@ class Layer(_Call):
         return '0\nLAYER\n2\n%s\n70\n%s\n62\n%s\n6\n%s' % (self.name.upper(),
                 self.flag, self.color, self.lineType)
 
-    
+
 class LineType(_Call):
     """Custom linetype"""
     def __init__(self, name='continuous', description='Solid line',
-            elements=[], flag=64):
+            elements=None, flag=64):
         # TODO: Implement lineType elements
         self.name = name
         self.description = description
-        self.elements = copy.copy(elements)
+        if elements:
+            self.elements = copy.copy(elements)
+        else:
+            self.elements = []
         self.flag = flag
 
     def __str__(self):
@@ -520,9 +559,9 @@ class View(_Call):
         self.flag = flag
         self.width = width
         self.height = height
-        self.center = center
-        self.direction = direction
-        self.target = target
+        self.center = Coord(center)
+        self.direction = Coord(direction)
+        self.target = Coord(target)
         self.lens = lens
         self.frontClipping = frontClipping
         self.backClipping = backClipping
@@ -551,21 +590,27 @@ def ViewByWindow(name, leftBottom=(0, 0), rightTop=(1, 1), **options):
 
 class Drawing(_Collection):
     """Dxf drawing. Use append or any other list methods to add objects."""
-    def __init__(self, insbase=(0.0, 0.0, 0.0), extmin=(0.0, 0.0),
-            extmax=(0.0, 0.0), layers=[Layer()], linetypes=[LineType()],
-            styles=[Style()], blocks=[], views=[], entities=None,
+    def __init__(self, insbase=(0, 0, 0), extmin=(0, 0),
+            extmax=(0, 0), layers=[Layer()], linetypes=[LineType()],
+            styles=[Style()], blocks=None, views=None, entities=None,
             fileName='test.dxf'):
         # TODO: replace list with None,arial
         entities = entities or []
         _Collection.__init__(self, entities)
-        self.insbase = insbase
-        self.extmin = extmin
-        self.extmax = extmax
+        self.insbase = Coord(insbase)
+        self.extmin = Coord(extmin)
+        self.extmax = Coord(extmax)
         self.layers = copy.copy(layers)
         self.linetypes = copy.copy(linetypes)
         self.styles = copy.copy(styles)
-        self.views = copy.copy(views)
-        self.blocks = copy.copy(blocks)
+        if views:
+            self.views = copy.copy(views)
+        else:
+            self.views = []
+        if blocks:
+            self.blocks = copy.copy(blocks)
+        else:
+            self.blocks = []
         self.fileName = fileName
         #private
         self.acadver = '9\n$ACADVER\n1\nAC1006'
@@ -585,7 +630,7 @@ class Drawing(_Collection):
         else:
             xstr = ''
         return '0\nSECTION\n2\n%s%s\n0\nENDSEC' % (name.upper(), xstr)
-    
+
     def _table(self, name, x):
         """Tables like ltype,layer,style,..."""
         if x:
@@ -618,14 +663,13 @@ class Drawing(_Collection):
         test.write(str(self))
         test.close()
 
-
 #---extras
 class Rectangle(_Entity):
     """Rectangle, creates lines."""
     def __init__(self, point=(0, 0, 0), width=1, height=1, solid=None,
             line=1, **common):
         _Entity.__init__(self, **common)
-        self.point = point
+        self.point = Coord(point)
         self.width = width
         self.height = height
         self.solid = solid
@@ -650,10 +694,13 @@ class Rectangle(_Entity):
 
 class LineList(_Entity):
     """Like polyline, but built of individual lines."""
-    def __init__(self, points=[], closed=0, **common):
+    def __init__(self, points=None, closed=0, **common):
         _Entity.__init__(self, **common)
         self.closed = closed
-        self.points = copy.copy(points)
+        if points is None:
+            self.points = []
+        else:
+            self.points = [Coord(point) for point in points]
 
     def __str__(self):
         if self.closed:
@@ -666,10 +713,7 @@ class LineList(_Entity):
                     parent=self)
         return result[1:]
 
-#PolyLine = LineList #not needed now
-
 #---test
-
 
 def main():
     #Blocks
@@ -677,7 +721,7 @@ def main():
     b.append(Solid(points=[(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)],
             color=1))
     b.append(Arc(center=(1, 0, 0), color=2))
-    
+
     #Drawing
     d = Drawing()
     #tables
@@ -704,7 +748,7 @@ def main():
     #        closed=1, color=1))
     d.append(PolyLine(points=[(1, 1, 1), (2, 1, 1), (2, 2, 1), (1, 2, 1)],
             flag=1, color=1))
-    
+
     d.saveas('c:\\test.dxf')
 
 if __name__ == '__main__':
