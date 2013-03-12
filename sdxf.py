@@ -1,7 +1,7 @@
 __version__ = """v1.1.2 (07/06/12)"""
 __author__ = "www.stani.be"
 __license__ = "GPL"
-__url__ = "https://github.com/nycresistor/SDXF"
+__url__ = "https://github.com/spauka/SDXF"
 """SDXF - Stani's DXF
 Python library to generate dxf drawings
 
@@ -14,38 +14,11 @@ Library by Stani, whose website is now defunct.
 Now on github, loosely maintained by Kellbot (http://www.kellbot.com)
 """ % (__author__, __version__, __license__, __url__)
 
-import copy
-
 ####1) Private (only for developers)
 _HEADER_POINTS = ['insbase', 'extmin', 'extmax']
 
-#---helper functions
-def _point(x, index=0):
-    """Convert tuple to a dxf point"""
-    return '\n'.join(['%s\n%s' % ((i + 1) * 10 + index, x[i])
-        for i in range(len(x))])
-
-
-def _points(p):
-    """Convert a list of tuples to dxf points"""
-    return [_point(p[i], i) for i in range(len(p))]
-
 #---base classes
-class _Call(object):
-    """Makes a callable class."""
-    def copy(self):
-        """Returns a copy."""
-        return copy.deepcopy(self)
-
-    def __call__(self, **attrs):
-        """Returns a copy with modified attributes."""
-        copied = self.copy()
-        for attr in attrs:
-            setattr(copied, attr, attrs[attr])
-        return copied
-
-
-class _Entity(_Call):
+class _Entity(object):
     """Base class for _common group codes for entities."""
     def __init__(self, color=None, extrusion=None, layer='0',
                  lineType=None, lineTypeScale=None, lineWeight=None,
@@ -67,7 +40,7 @@ class _Entity(_Call):
         if parent.color is not None:
             result += '\n62\n%s' % parent.color
         if parent.extrusion is not None:
-            result += '\n%s' % _point(parent.extrusion, 200)
+            result += '\n%s' % parent.extrusion.str(200)
         if parent.lineType is not None:
             result += '\n6\n%s' % parent.lineType
         if parent.lineWeight is not None:
@@ -78,20 +51,10 @@ class _Entity(_Call):
             result += '\n39\n%s' % parent.thickness
         return result
 
-
-class _Entities(object):
-    """Base class to deal with composed objects."""
-    def __dxf__(self):
-        return []
-
-    def __str__(self):
-        return '\n'.join([str(x) for x in self.__dxf__()])
-
-
-class _Collection(_Call):
+class _Collection(object):
     """Base class to expose entities methods to main object."""
     def __init__(self, entities=None):
-        self.entities = copy.copy(entities or [])
+        self.entities = (entities or [])[:]
         #link entities methods to drawing
         for attr in dir(self.entities):
             if attr[0] != '_':
@@ -173,7 +136,6 @@ class Coord(object):
             raise ValueError("Coordinates must be in 2D or 3D")
 
         # Ensure that the tuple is in numerical form
-        print self._coord
         self._coord = tuple(map(float, self._coord))
 
     @property
@@ -182,6 +144,11 @@ class Coord(object):
 
     def __repr__(self):
         return "%s(%r)" % (self.__class__.__name__, self._coord)
+    def __str__(self):
+        return self.str()
+    def str(self, index=0):
+        """Convert tuple to a dxf point"""
+        return '\n'.join(['%s\n%s' % ((i + 1)*10 + index, v) for i, v in enumerate(self)])
 
     def __len__(self):
         return self._len
@@ -189,6 +156,11 @@ class Coord(object):
         return self._coord[key]
     def __iter__(self):
         return iter(self._coord)
+
+    @staticmethod
+    def points(p):
+        """Convert a list of tuples to dxf points"""
+        return [v.str(i) for i, v in enumerate(p)]
 
 #---entitities
 
@@ -206,7 +178,7 @@ class Arc(_Entity):
 
     def __str__(self):
         return '0\nARC\n%s\n%s\n40\n%s\n50\n%s\n51\n%s' % \
-               (self._common(), _point(self.center),
+               (self._common(), str(self.center),
                 self.radius, self.startAngle, self.endAngle)
 
 
@@ -219,7 +191,7 @@ class Circle(_Entity):
 
     def __str__(self):
         return '0\nCIRCLE\n%s\n%s\n40\n%s' % \
-               (self._common(), _point(self.center), self.radius)
+               (self._common(), str(self.center), self.radius)
 
 
 class Face(_Entity):
@@ -230,7 +202,7 @@ class Face(_Entity):
 
     def __str__(self):
         return '\n'.join(['0\n3DFACE', self._common()] +
-                _points(self.points))
+                Coord.points(self.points))
 
 
 class Insert(_Entity):
@@ -253,7 +225,7 @@ class Insert(_Entity):
 
     def __str__(self):
         result = '0\nINSERT\n2\n%s\n%s\n%s' % (self.name, self._common(),
-                _point(self.point))
+                str(self.point))
         if self.xscale is not None:
             result += '\n41\n%s' % self.xscale
         if self.yscale is not None:
@@ -280,7 +252,7 @@ class Line(_Entity):
         self.points = [Coord(point) for point in points]
 
     def __str__(self):
-        return '\n'.join(['0\nLINE', self._common()] + _points(self.points))
+        return '\n'.join(['0\nLINE', self._common()] + Coord.points(self.points))
 
 
 class LwPolyLine(_Entity):
@@ -297,7 +269,7 @@ class LwPolyLine(_Entity):
         result = '0\nLWPOLYLINE\n%s\n70\n%s' % (self._common(), self.flag)
         result += '\n90\n%s' % len(self.points)
         for point in self.points:
-            result += '\n%s' % _point(point)
+            result += '\n%s' % str(point)
         if self.width:
             result += '\n40\n%s\n41\n%s' % (self.width, self.width)
         return result
@@ -312,11 +284,11 @@ class PolyLine(_Entity):
 
     def __str__(self):
         result = '0\nPOLYLINE\n%s\n66\n1\n70\n%s\n%s' %\
-            (self._common(), self.flag,_point(self.points[0]))
+            (self._common(), self.flag,str(self.points[0]))
             # set pline elevation with the first point
         for point in self.points:
             result += '\n0\nVERTEX\n%s\n%s' %\
-                (_point(point),self._common()) # put layer on vertex
+                (str(point),self._common()) # put layer on vertex
             if self.width:
                 result += '\n40\n%s\n41\n%s' % (self.width, self.width)
         result += '\n0\nSEQEND'
@@ -334,7 +306,7 @@ class Point(_Entity):
 
     def __str__(self):
         result = '0\nPOINT\n%s' % (self._common())
-        result += '\n%s' % _point(self.points)
+        result += '\n%s' % str(self.points)
         return result
 
 
@@ -348,8 +320,8 @@ class Solid(_Entity):
             self.points = None
 
     def __str__(self):
-        return '\n'.join(['0\nSOLID', self._common()] + 
-            _points(self.points[:2] + [self.points[3], self.points[2]]))
+        return '\n'.join(['0\nSOLID', self._common()] +
+            Coord.points(self.points[:2] + [self.points[3], self.points[2]]))
 
 
 class Text(_Entity):
@@ -373,7 +345,7 @@ class Text(_Entity):
 
     def __str__(self):
         result = '0\nTEXT\n%s\n%s\n40\n%s\n1\n%s' % (self._common(),
-                _point(self.point), self.height, self.text)
+                str(self.point), self.height, self.text)
         if self.rotation:
             result += '\n50\n%s' % self.rotation
         if self.xscale:
@@ -387,7 +359,7 @@ class Text(_Entity):
         if self.justifyhor:
             result += '\n72\n%s' % self.justifyhor
         if self.alignment:
-            result += '\n%s' % _point(self.alignment, 1)
+            result += '\n%s' % self.alignment.str(1)
         if self.justifyver:
             result += '\n73\n%s' % self.justifyver
         return result
@@ -461,12 +433,12 @@ class Mtext(Text):
 ##            input=input[250:]
 ##        text+='\n1\n%s'%input
 ##        result= '0\nMTEXT\n%s\n%s\n40\n%s\n41\n%s\n71\n%s\n72\n%s%s\n43\n%s\n50\n%s'%\
-##                (self._common(),_point(self.point),self.charHeight,self.width,
+##                (self._common(),str(self.point),self.charHeight,self.width,
 ##                 self.attachment,self.direction,text,
 ##                 self.height,
 ##                 self.rotation)
 ##        if self.style:result+='\n7\n%s'%self.style
-##        if self.xdirection:result+='\n%s'%_point(self.xdirection,1)
+##        if self.xdirection:result+='\n%s'%self.xdirection.str(1)
 ##        if self.charWidth:result+='\n42\n%s'%self.charWidth
 ##        if self.spacingStyle:result+='\n73\n%s'%self.spacingStyle
 ##        if self.spacingFactor:result+='\n44\n%s'%self.spacingFactor
@@ -478,10 +450,7 @@ class Mtext(Text):
 class Block(_Collection):
     """Use list methods to add entities, eg append."""
     def __init__(self, name, layer='0', flag=0, base=(0, 0, 0), entities=None):
-        if entities:
-            self.entities = copy.copy(entities)
-        else:
-            self.entities = []
+        self.entities = (entities or [])[:]
         _Collection.__init__(self, entities)
         self.layer = layer
         self.name = name
@@ -491,11 +460,11 @@ class Block(_Collection):
     def __str__(self):
         e = '\n'.join([str(x)for x in self.entities])
         return '0\nBLOCK\n8\n%s\n2\n%s\n70\n%s\n%s\n3\n%s\n%s\n0\nENDBLK' % (
-                self.layer, self.name.upper(), self.flag, _point(self.base),
+                self.layer, self.name.upper(), self.flag, str(self.base),
                 self.name.upper(), e)
 
 
-class Layer(_Call):
+class Layer(object):
     """Layer"""
     def __init__(self, name='pydxf', color=7, lineType='continuous',
             flag=64):
@@ -509,17 +478,14 @@ class Layer(_Call):
                 self.flag, self.color, self.lineType)
 
 
-class LineType(_Call):
+class LineType(object):
     """Custom linetype"""
     def __init__(self, name='continuous', description='Solid line',
             elements=None, flag=64):
         # TODO: Implement lineType elements
         self.name = name
         self.description = description
-        if elements:
-            self.elements = copy.copy(elements)
-        else:
-            self.elements = []
+        self.elements = (elements or [])[:]
         self.flag = flag
 
     def __str__(self):
@@ -528,7 +494,7 @@ class LineType(_Call):
                 len(self.elements))
 
 
-class Style(_Call):
+class Style(object):
     """Text style"""
     def __init__(self, name='standard', flag=0, height=0, widthFactor=40,
             obliqueAngle=50, mirror=0, lastHeight=1, font='arial.ttf',
@@ -551,7 +517,7 @@ class Style(_Call):
                 self.lastHeight, self.font.upper(), self.bigFont.upper()))
 
 
-class View(_Call):
+class View(object):
     def __init__(self, name, flag=0, width=1, height=1, center=(0.5, 0.5), 
                 direction=(0, 0, 1), target=(0, 0, 0), lens=50, 
                 frontClipping=0, backClipping=0, twist=0, mode=0):
@@ -571,8 +537,8 @@ class View(_Call):
     def __str__(self):
         return ('0\nVIEW\n2\n%s\n70\n%s\n40\n%s\n%s\n41\n%s\n%s\n%s\n42\n%s'
                 '\n43\n%s\n44\n%s\n50\n%s\n71\n%s' % (self.name,
-                self.flag, self.height, _point(self.center), self.width,
-                _point(self.direction, 1), _point(self.target, 2),
+                self.flag, self.height, str(self.center), self.width,
+                self.direction.str(1), self.target.str(2),
                 self.lens, self.frontClipping, self.backClipping,
                 self.twist, self.mode))
 
@@ -600,17 +566,11 @@ class Drawing(_Collection):
         self.insbase = Coord(insbase)
         self.extmin = Coord(extmin)
         self.extmax = Coord(extmax)
-        self.layers = copy.copy(layers)
-        self.linetypes = copy.copy(linetypes)
-        self.styles = copy.copy(styles)
-        if views:
-            self.views = copy.copy(views)
-        else:
-            self.views = []
-        if blocks:
-            self.blocks = copy.copy(blocks)
-        else:
-            self.blocks = []
+        self.layers = layers[:]
+        self.linetypes = linetypes[:]
+        self.styles = styles[:]
+        self.views = (views or [])[:]
+        self.blocks = (blocks or [])[:]
         self.fileName = fileName
         #private
         self.acadver = '9\n$ACADVER\n1\nAC1006'
@@ -621,7 +581,7 @@ class Drawing(_Collection):
 
     def _point(self, name, x):
         """Point setting from drawing like extmin,extmax,..."""
-        return '%s\n%s' % (self._name(name), _point(x))
+        return '%s\n%s' % (self._name(name), str(x))
 
     def _section(self, name, x):
         """Sections like tables,blocks,entities,..."""
@@ -697,10 +657,7 @@ class LineList(_Entity):
     def __init__(self, points=None, closed=0, **common):
         _Entity.__init__(self, **common)
         self.closed = closed
-        if points is None:
-            self.points = []
-        else:
-            self.points = [Coord(point) for point in points]
+        self.points = [Coord(point) for point in points or []]
 
     def __str__(self):
         if self.closed:
